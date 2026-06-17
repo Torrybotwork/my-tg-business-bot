@@ -1,24 +1,21 @@
 import os
-import time
-import random
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
-from google import genai
-from google.genai import types
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = Groq(api_key=GROQ_API_KEY)
 
-# Память чатов (теперь храним в простом текстовом формате, чтобы API не ругалось)
+# Память чатов для Groq
 chats_memory = {}
-MAX_HISTORY_LENGTH = 14  # Ограничим историю 7 диалогами, чтобы не путать ИИ
+MAX_HISTORY_LENGTH = 10
 
 MY_CHARACTER = """
 Ты — цифровой двойник обычного парня. Ты автоматически отвечаешь в Телеграме его друзьям вместо него через бизнес-аккаунт.
@@ -59,68 +56,54 @@ except Exception as e:
 
 @bot.business_message_handler(func=lambda m: True)
 def handle_business_messages(message):
-    # Фильтр от самоответов
+    # Фильтр: игнорируем свои сообщения и других ботов
     if message.from_user.id == BOT_ID or message.from_user.is_bot:
         return
     if not message.text:
         return
 
     chat_id = message.chat.id
+    connection_id = getattr(message, 'business_connection_id', None)
+
     if chat_id not in chats_memory:
         chats_memory[chat_id] = []
 
-    # Добавляем сообщение пользователя в историю (в виде структуры API)
-    chats_memory[chat_id].append(
-        types.Content(role="user", parts=[types.Part.from_text(text=message.text)])
-    )
-
     try:
-        # Включаем статус "Печатает..." в Telegram Business
-        bot.send_chat_action(
-            chat_id, 
-            action='typing', 
-            business_connection_id=getattr(message, 'business_connection_id', None)
-        )
+        # Собираем историю для Groq
+        messages_input = [{"role": "system", "content": MY_CHARACTER}]
+        for msg in chats_memory[chat_id]:
+            messages_input.append(msg)
+        messages_input.append({"role": "user", "content": message.text})
 
-        # Отправляем запрос в Gemini
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=chats_memory[chat_id],
-            config=types.GenerateContentConfig(
-                system_instruction=MY_CHARACTER,
-                temperature=0.85
-            )
+        # Запрос к Llama 3.3 через Groq
+        chat_completion = client.chat.completions.create(
+            messages=messages_input,
+            model="llama-3.3-70b-versatile",
+            temperature=0.85,
+            max_tokens=150
         )
         
-        if response.text:
-            # Реалистичная пауза для имитации ввода текста
-            fake_delay = random.uniform(3.0, 6.0)
-            time.sleep(fake_delay)
+        response_text = chat_completion.choices[0].message.content
 
-            # Добавляем ответ ИИ в историю
-            chats_memory[chat_id].append(
-                types.Content(role="model", parts=[types.Part.from_text(text=response.text)])
-            )
+        if response_text:
+            # Сохраняем реплики в историю чата
+            chats_memory[chat_id].append({"role": "user", "content": message.text})
+            chats_memory[chat_id].append({"role": "assistant", "content": response_text})
 
-            # Ограничиваем длину истории чата
             if len(chats_memory[chat_id]) > MAX_HISTORY_LENGTH:
                 chats_memory[chat_id] = chats_memory[chat_id][-MAX_HISTORY_LENGTH:]
 
-            # Отправляем итоговый ответ
+            # Отправляем сообщение обратно в Telegram Business
             bot.send_message(
                 chat_id=chat_id, 
-                text=response.text, 
-                business_connection_id=getattr(message, 'business_connection_id', None)
+                text=response_text, 
+                business_connection_id=connection_id
             )
             
     except Exception as e:
-        # Если произошла ошибка, выводим её в логи Render, чтобы мы могли её прочитать
-        print(f"КРИТИЧЕСКАЯ ОШИБКА GEMINI: {e}")
-        # Очищаем последнюю реплику, чтобы история не ломалась при следующем сообщении
-        if chats_memory[chat_id] and chats_memory[chat_id][-1].role == "user":
-            chats_memory[chat_id].pop()
+        print(f"ОШИБКА GROQ: {e}")
 
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
-    print("Обновленный бесплатный веб-сервис бота запущен!")
+    print("Бот успешно переведен на Groq Llama 3.3!")
     bot.polling(none_stop=True)
