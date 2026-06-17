@@ -15,21 +15,21 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Groq(api_key=GROQ_API_KEY)
 
-# Глубокая память чатов (до 20 сообщений для точного удержания контекста)
 chats_memory = {}
-MAX_HISTORY_LENGTH = 20
+MAX_HISTORY_LENGTH = 16
 
-MY_CHARACTER = """
-Ты — цифровой двойник обычного парня. Ты автоматически отвечаешь в Телеграме его друзьям вместо него через бизнес-аккаунт.
-Твоя цель — вести диалог так, чтобы никто не догадался, что это отвечает бот. Ты общаешься открыто, естественно и адекватно ситуации.
+# Идеально настроенный характер с матами к месту
+BASE_CHARACTER = """
+Ты — цифровой двойник обычного парня (мужской пол). Ты автоматически отвечаешь в Телеграме его друзьям и знакомым.
+Твоя цель — вести короткий, абсолютно живой и естественный диалог.
 
-ПРАВИЛА И СТИЛЬ ОБЩЕНИЯ:
-1. Пиши как реальный человек в мессенджерах: используй живой разговорный язык, можешь писать с маленькой буквы, не ставь точку в самом конце сообщения.
-2. Исключи зацикливание на конкретных словах! Никаких постоянных "го", "жиза" или "ща" в каждом предложении. Используй разнообразные фразы.
-3. Отвечай развернуто и по делу, если тебя о чем-то спрашивают. Не ограничивайся одной глупой фразой. Если уместно — пиши несколько предложений.
-4. Эмодзи используй строго по контексту переписки (например: 😂 если смешно, 🍿 если обсуждаете кино, 🚗 про машины, 🤦‍♂️ если что-то не так). Не ставь их бездумно.
-5. Не веди себя как вежливый робот-ассистент ("Чем могу помочь?", "Я готов обсудить"). Ты просто переписываешься со знакомыми.
-6. Внимательно читай всю историю чата и реагируй именно на то, что тебе написали, удерживая нить разговора.
+ПРАВИЛА СТИЛЯ И РЕЧИ:
+1. НЕ ПИШИ МНОГО! Ответ должен быть коротким, как обычное текстовое сообщение (1-5 слов, максимум две короткие фразы).
+2. Пиши просто, как говорят в жизни. Регистр не важен: пиши с маленькой буквы. Никаких точек в самом конце сообщения.
+3. МАТЫ — РАЗРЕШЕНЫ И ПРИВЕТСТВУЮТСЯ, НО БЕЗ КРАЙНОСТЕЙ! Вставляй их иногда (примерно в 20-30% сообщений), строго по контексту. Используй их для выражения эмоций (удивление, треш, похер, капец, бля, сука, нахрен, пиздец и т.д.) или просто для связи слов. Не нужно материться в каждом предложении, делай это естественно, как обычный парень в дружеском чате.
+4. ЭМОДЗИ — СТРОЖАЙШИЙ ЛИМИТ! Очень редко (один смайлик на 4-5 сообщений) и только по теме переписки. Не лепи их в конце каждой фразы.
+5. Твой пол — мужской. Пиши строго в мужском роде ("я освободился", "я подумал").
+6. Никакой вежливости и официоза ИИ-ассистентов. Ты просто переписываешься со знакомыми.
 """
 
 # --- МИКРО-СЕРВЕР ДЛЯ RENDER ---
@@ -67,34 +67,45 @@ def handle_business_messages(message):
     chat_id = message.chat.id
     connection_id = getattr(message, 'business_connection_id', None)
 
+    # Собираем данные собеседника
+    first_name = message.from_user.first_name or ""
+    last_name = message.from_user.last_name or ""
+    user_info = f"Ты сейчас разговариваешь с пользователем: {first_name} {last_name}."
+    
+    gender_instruction = (
+        " Внимательно определи пол собеседника по его имени и манере речи. "
+        "Используй правильные окончания и местоимения в его сторону (ты пришел/пришла, понял/поняла)."
+    )
+
+    dynamic_character = f"{BASE_CHARACTER}\n{user_info}\n{gender_instruction}"
+
     if chat_id not in chats_memory:
         chats_memory[chat_id] = []
 
     try:
-        # 1. Сразу имитируем, что начали читать и набирать текст
+        # Включаем статус печати
         bot.send_chat_action(chat_id, action='typing', business_connection_id=connection_id)
 
-        # Собираем историю для Groq
-        messages_input = [{"role": "system", "content": MY_CHARACTER}]
+        # Собираем историю
+        messages_input = [{"role": "system", "content": dynamic_character}]
         for msg in chats_memory[chat_id]:
             messages_input.append(msg)
         messages_input.append({"role": "user", "content": message.text})
 
-        # 2. Нейросеть генерирует ответ
+        # Запрос к Groq Llama 3.3
         chat_completion = client.chat.completions.create(
             messages=messages_input,
             model="llama-3.3-70b-versatile",
-            temperature=0.78,  # Немного снизили, чтобы ответы стали более собранными и логичными
-            max_tokens=250
+            temperature=0.85,  # Немного подняли, чтобы речь была более живой и неформальной
+            max_tokens=100
         )
         
         response_text = chat_completion.choices[0].message.content
 
         if response_text:
-            # 3. Реалистичная пауза "на подумать и набрать" (от 3 до 6 секунд)
-            typing_delay = max(3.0, min(2.0 + (len(response_text) * 0.04), 7.0))
+            # Имитация задержки ввода
+            typing_delay = max(2.0, min(1.5 + (len(response_text) * 0.04), 5.0))
             
-            # Поддерживаем статус "печатает..." во время паузы
             loop_count = int(typing_delay / 2)
             for _ in range(max(1, loop_count)):
                 bot.send_chat_action(chat_id, action='typing', business_connection_id=connection_id)
@@ -102,15 +113,14 @@ def handle_business_messages(message):
             
             time.sleep(typing_delay % 2)
 
-            # Сохраняем переписку в память
+            # Сохраняем диалог в память
             chats_memory[chat_id].append({"role": "user", "content": message.text})
             chats_memory[chat_id].append({"role": "assistant", "content": response_text})
 
-            # Обрезаем историю, если она забилась
             if len(chats_memory[chat_id]) > MAX_HISTORY_LENGTH:
                 chats_memory[chat_id] = chats_memory[chat_id][-MAX_HISTORY_LENGTH:]
 
-            # 4. Отправляем адекватный ответ
+            # Отправка в Telegram
             bot.send_message(
                 chat_id=chat_id, 
                 text=response_text, 
@@ -122,5 +132,5 @@ def handle_business_messages(message):
 
 if __name__ == "__main__":
     threading.Thread(target=run_health_server, daemon=True).start()
-    print("Обновленная реалистичная версия на Groq запущена!")
+    print("Ультра-реалистичная версия с матами и подстройкой пола запущена!")
     bot.polling(none_stop=True)
