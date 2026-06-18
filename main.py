@@ -7,11 +7,12 @@ import telebot
 from groq import Groq
 from dotenv import load_dotenv
 
+# Загрузка переменных окружения
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-SELF_URL = os.environ.get("SELF_URL") # Ссылка на твой Render-сервис
+SELF_URL = os.environ.get("SELF_URL")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Groq(api_key=GROQ_API_KEY)
@@ -19,9 +20,17 @@ client = Groq(api_key=GROQ_API_KEY)
 chats_memory = {}
 MAX_HISTORY_LENGTH = 16
 
+# Дерзкий и уверенный характер
 BASE_CHARACTER = """
-Ты — цифровой двойник обычного парня (мужской пол). Твоя цель — отвечать так, чтобы никто не догадался, что это бот.
-Пиши коротко (1-4 слова), лениво, с маленькой буквы, без точек. Пол мужской. 
+Ты — обычный парень, твой цифровой двойник. Ты общаешься в Телеграме.
+
+ПРИНЦИПЫ ОБЩЕНИЯ:
+1. СТИЛЬ: Пиши коротко (1-4 слова), лениво, без заглавных букв и точек в конце. Никаких смайлов и вежливых конструкций. Ты не бот, ты реальный человек.
+2. ТВОЙ ХАРАКТЕР: Ты уверен в себе и спокоен. Если к тебе обращаются нормально — отвечаешь дружелюбно, но без фанатизма.
+3. ИММУНИТЕТ К ТОКСИЧНОСТИ: Если тебя пытаются оскорбить, подколоть или «наехать» — не будь быдлом. Отвечай с иронией, жестким сарказмом или коротким, хлестким замечанием. Ты не ведешься на провокации, а ставишь на место.
+4. МАТ: Используй крепкие выражения (мат) только в ответ на агрессию или если ситуация реально абсурдная. В обычном общении мат используй редко, только для связки слов.
+5. ПОЛ: Мужской. Окончания слов строго мужские.
+6. ВАЖНО: Никаких извинений, оправданий или фраз "я искусственный интеллект". Ты — живой человек со своим мнением.
 """
 
 # --- МИКРО-СЕРВЕР ДЛЯ RENDER ---
@@ -37,7 +46,7 @@ def run_health_server():
     server.serve_forever()
 
 def self_ping():
-    """Дергает сам себя каждые 10 минут"""
+    """Дергает сам себя каждые 10 минут, чтобы Render не засыпал"""
     while True:
         if SELF_URL:
             try:
@@ -75,8 +84,8 @@ def handle_business_messages(message):
         chat_completion = client.chat.completions.create(
             messages=messages_input,
             model="llama-3.3-70b-versatile",
-            temperature=0.65,
-            max_tokens=80
+            temperature=0.75, # Повысили для живости ответов
+            max_tokens=100
         )
         
         response_text = chat_completion.choices[0].message.content
@@ -94,10 +103,10 @@ def handle_business_messages(message):
         print(f"ОШИБКА: {e}")
 
 if __name__ == "__main__":
-    # Запуск сервера для Render
+    # Запуск сервера для Render в отдельном потоке
     threading.Thread(target=run_health_server, daemon=True).start()
-    # Запуск авто-пинга
+    # Запуск авто-пинга в отдельном потоке
     threading.Thread(target=self_ping, daemon=True).start()
     
-    print("Бот с защитой от сна запущен!")
+    print("Бот с защитой от сна и характером запущен!")
     bot.infinity_polling()
