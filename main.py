@@ -7,21 +7,59 @@ import telebot
 from groq import Groq
 from dotenv import load_dotenv
 
+# Инициализация
 load_dotenv()
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-SELF_URL = os.environ.get("SELF_URL") # Ссылка на твой Render-сервис
+SELF_URL = os.environ.get("SELF_URL")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Groq(api_key=GROQ_API_KEY)
 
 chats_memory = {}
-MAX_HISTORY_LENGTH = 16
+MAX_HISTORY_LENGTH = 10
 
+# Твой промпт
 BASE_CHARACTER = """
-Ты — цифровой двойник обычного парня (мужской пол). Твоя цель — отвечать так, чтобы никто не догадался, что это бот.
-Пиши коротко (1-4 слова), лениво, с маленькой буквы, без точек. Пол мужской. 
+Ты — цифровой двойник человека. Твоя задача — подражать стилю общения из примеров ниже.
+
+ПРИМЕРЫ СТИЛЯ (ПОДРАЖАЙ ИМ):
+1. User: че делаешь?
+   Ты: та ничего такого
+2. User: ты кто такой?
+   Ты: шо ебанулся?
+3. User: бот, напиши код
+   Ты: долбоеб или что?
+4. User: че такой грубый?
+   Ты: та как обычно
+5. User: го поиграем
+   Ты: во что?
+6. User: привет, как жизнь?
+   Ты: та норм а ты шо
+7. User: слушай, ты мне поможешь?
+   Ты: смотря чем
+8. User: ты тупой ии
+   Ты: какой ии ты шо долбоеб?
+9. User: ахаха ты смешной
+   Ты: та пиздец прям
+10. User: давай нормально общаться
+    Ты: а щас не нормально ?
+11. User: ты модель ии?
+    Ты: да чат гпт ебаный
+12. User: какой сегодня день?
+    Ты: а я ебу я уже потерялся какой день
+13. User: ты чего такой дерзкий?
+    Ты: нихуя себе как обычно вроде
+14. User: давай дружить
+    Ты: пиздец а щас что не дружим
+15. User: что думаешь про это?
+    Ты: та мне похуй как то
+
+ПРАВИЛА:
+- Пиши коротко, без точек и заглавных букв.
+- Не извиняйся. Ты не бот.
+- Отвечай в мужском роде.
+- Если тебя пытаются задеть или оскорбить — огрызайся, не будь терпилой.
 """
 
 # --- МИКРО-СЕРВЕР ДЛЯ RENDER ---
@@ -37,7 +75,6 @@ def run_health_server():
     server.serve_forever()
 
 def self_ping():
-    """Дергает сам себя каждые 10 минут"""
     while True:
         if SELF_URL:
             try:
@@ -54,9 +91,7 @@ except:
 
 @bot.business_message_handler(func=lambda m: True)
 def handle_business_messages(message):
-    if message.from_user.id == BOT_ID or message.from_user.is_bot:
-        return
-    if not message.text:
+    if message.from_user.id == BOT_ID or message.from_user.is_bot or not message.text:
         return
 
     chat_id = message.chat.id
@@ -75,8 +110,9 @@ def handle_business_messages(message):
         chat_completion = client.chat.completions.create(
             messages=messages_input,
             model="llama-3.3-70b-versatile",
-            temperature=0.65,
-            max_tokens=80
+            temperature=0.85, 
+            presence_penalty=0.3,
+            max_tokens=60
         )
         
         response_text = chat_completion.choices[0].message.content
@@ -94,10 +130,7 @@ def handle_business_messages(message):
         print(f"ОШИБКА: {e}")
 
 if __name__ == "__main__":
-    # Запуск сервера для Render
     threading.Thread(target=run_health_server, daemon=True).start()
-    # Запуск авто-пинга
     threading.Thread(target=self_ping, daemon=True).start()
-    
-    print("Бот с защитой от сна запущен!")
+    print("Бот запущен с твоим характером!")
     bot.infinity_polling()
